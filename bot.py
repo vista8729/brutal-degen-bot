@@ -10,11 +10,7 @@ import pytz
 
 load_dotenv()
 
-print("=== DEBUG: Skrypt uruchomiony pomyślnie ===")
-
-# ====================== KONFIGURACJA ======================
 XAI_BEARER = os.getenv("XAI_BEARER")
-print(f"XAI_BEARER: {'OK' if XAI_BEARER else 'BRAK'}")
 
 RSS_QUERIES = [
     "bitcoin+OR+btc+ETF+OR+regulation",
@@ -24,19 +20,12 @@ RSS_QUERIES = [
     "crypto+regulation+OR+stablecoin+OR+CLARITY+Act"
 ]
 
-# ====================== HARMONOGRAM ET ======================
 ET = pytz.timezone("America/New_York")
-SLOTS = [
-    "08:00", "09:20", "09:55",     # Opening
-    "11:15", "12:45", "14:20", "15:50", "17:00", "19:00",  # Value
-    "13:40", "16:40", "20:00",     # News
-    "21:15", "22:20", "23:30"      # Closing
-]
+SLOTS = ["08:00","09:20","09:55","11:15","12:45","13:40","14:20","15:50","16:40","17:00","19:00","20:00","21:15","22:20","23:30"]
 
 DATA_FILE = "last_seen.json"
-CHECK_INTERVAL = 600  # 10 minut
+CHECK_INTERVAL = 600
 
-# Tweepy
 auth = tweepy.OAuth1UserHandler(
     os.getenv("CONSUMER_KEY"), os.getenv("CONSUMER_SECRET"),
     os.getenv("ACCESS_TOKEN"), os.getenv("ACCESS_TOKEN_SECRET")
@@ -76,17 +65,14 @@ def fetch_rss_news():
                 continue
     
     if all_entries:
-        last_seen["last_pub"] = max([e["pubDate"] for e in all_entries], 
-                                  key=lambda x: datetime.strptime(x, "%a, %d %b %Y %H:%M:%S %Z")
-                                  ).replace(" ", "T").replace("GMT", "Z")
+        last_seen["last_pub"] = max([e["pubDate"] for e in all_entries], key=lambda x: datetime.strptime(x, "%a, %d %b %Y %H:%M:%S %Z")).replace(" ", "T").replace("GMT", "Z")
         save_last_seen(last_seen)
     
-    return all_entries[:10]
+    return all_entries[:12]
 
 def generate_posts_grok(news_items):
     if not news_items:
         return []
-    
     news_text = "\n\n".join([f"Title: {n['title']}\nLink: {n['link']}\nSnippet: {n['description']}" for n in news_items])
     
     system_prompt = """You are Brutal Degen Roast (@BrutalDegenX).
@@ -101,61 +87,37 @@ If the news is huge - start the post with "🚨 BREAKING"."""
         "input": f"{system_prompt}\n\nLatest news:\n{news_text}\n\nGenerate posts in my Brutal Degen Roast style."
     }
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {XAI_BEARER}"
-    }
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {XAI_BEARER}"}
 
     try:
         resp = requests.post("https://api.x.ai/v1/responses", json=payload, headers=headers, timeout=30)
         resp.raise_for_status()
         result = resp.json()
         content = result.get("output") or result.get("choices", [{}])[0].get("message", {}).get("content", "")
-        posts = [p.strip() for p in content.split("---") if p.strip()]
-        return posts[:4]
-    except Exception as e:
-        print(f"Grok API error: {e}")
+        return [p.strip() for p in content.split("---") if p.strip()]
+    except:
         return []
 
 def post_to_x(text):
     try:
         api.update_status(text)
-        print(f"✅ Posted at {datetime.now(ET).strftime('%H:%M')} ET: {text[:80]}...")
         time.sleep(3)
         return True
-    except Exception as e:
-        print(f"Post error: {e}")
+    except:
         return False
 
 def is_slot_time():
-    now = datetime.now(ET)
-    current = now.strftime("%H:%M")
-    return current in SLOTS
+    return datetime.now(ET).strftime("%H:%M") in SLOTS
 
-# ====================== MAIN LOOP ======================
 print("🚀 Brutal Degen Roast Bot STARTED – @BrutalDegenX")
-print("Harmonogram ET • Global crypto • No spam")
 
 while True:
-    now_et = datetime.now(ET)
-    print(f"[{now_et.strftime('%H:%M')} ET] Sprawdzam nowe newsy...")
-
     news = fetch_rss_news()
-
     if news:
-        print(f"Znaleziono {len(news)} nowych newsów → generuję roasty...")
         posts = generate_posts_grok(news)
-        
         for post in posts:
             if "BREAKING" in post.upper() or post.startswith("🚨"):
-                print("🚨 BREAKING NEWS – publikuję natychmiast!")
                 post_to_x(post)
             elif is_slot_time():
                 post_to_x(post)
-            else:
-                print("⏳ Nie ma slotu publikacyjnego - pomijam")
-    else:
-        print("Brak nowych newsów w tej chwili.")
-
-    print(f"⏳ Czekam {CHECK_INTERVAL//60} minut...\n")
     time.sleep(CHECK_INTERVAL)
