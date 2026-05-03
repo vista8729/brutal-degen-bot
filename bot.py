@@ -10,8 +10,11 @@ import pytz
 
 load_dotenv()
 
+print("=== DEBUG: Skrypt uruchomiony pomyślnie ===")
+
 # ====================== KONFIGURACJA ======================
 XAI_BEARER = os.getenv("XAI_BEARER")
+print(f"XAI_BEARER: {'OK' if XAI_BEARER else 'BRAK'}")
 
 RSS_QUERIES = [
     "bitcoin+OR+btc+ETF+OR+regulation",
@@ -31,7 +34,7 @@ SLOTS = [
 ]
 
 DATA_FILE = "last_seen.json"
-CHECK_INTERVAL = 600  # co 10 minut sprawdzamy newsy
+CHECK_INTERVAL = 600  # 10 minut
 
 # Tweepy
 auth = tweepy.OAuth1UserHandler(
@@ -144,17 +147,15 @@ while True:
         posts = generate_posts_grok(news)
         
         for post in posts:
-            # Jeśli Grok oznaczył jako BREAKING → publikujemy OD RAZU
-            if post.startswith("🚨 BREAKING") or "BREAKING" in post.upper():
+            if "BREAKING" in post.upper() or post.startswith("🚨"):
                 print("🚨 BREAKING NEWS – publikuję natychmiast!")
                 post_to_x(post)
-            # Normalny post → publikujemy tylko w slotach
             elif is_slot_time():
                 post_to_x(post)
             else:
-                print("⏳ Nie ma slotu – pomijam publikację")
+                print("⏳ Nie ma slotu publikacyjnego - pomijam")
     else:
-        print("Brak nowych newsów.")
+        print("Brak nowych newsów w tej chwili.")
 
     print(f"⏳ Czekam {CHECK_INTERVAL//60} minut...\n")
     time.sleep(CHECK_INTERVAL)
