@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 import tweepy
 from dotenv import load_dotenv
+import pytz
 
 load_dotenv()
 
@@ -20,8 +21,17 @@ RSS_QUERIES = [
     "crypto+regulation+OR+stablecoin+OR+CLARITY+Act"
 ]
 
+# ====================== HARMONOGRAM ET ======================
+ET = pytz.timezone("America/New_York")
+SLOTS = [
+    "08:00", "09:20", "09:55",     # Opening
+    "11:15", "12:45", "14:20", "15:50", "17:00", "19:00",  # Value
+    "13:40", "16:40", "20:00",     # News
+    "21:15", "22:20", "23:30"      # Closing
+]
+
 DATA_FILE = "last_seen.json"
-POST_INTERVAL = 480  # 8 minut
+CHECK_INTERVAL = 600  # co 10 minut sprawdzamy newsy
 
 # Tweepy
 auth = tweepy.OAuth1UserHandler(
@@ -63,7 +73,9 @@ def fetch_rss_news():
                 continue
     
     if all_entries:
-        last_seen["last_pub"] = max([e["pubDate"] for e in all_entries], key=lambda x: datetime.strptime(x, "%a, %d %b %Y %H:%M:%S %Z")).replace(" ", "T").replace("GMT", "Z")
+        last_seen["last_pub"] = max([e["pubDate"] for e in all_entries], 
+                                  key=lambda x: datetime.strptime(x, "%a, %d %b %Y %H:%M:%S %Z")
+                                  ).replace(" ", "T").replace("GMT", "Z")
         save_last_seen(last_seen)
     
     return all_entries[:10]
@@ -79,7 +91,7 @@ Style: Brutal crypto roasts daily. Sarcastic, degen humor, roast the market, alw
 Mix hype + pain + dark humor. Use emojis 🔥😭🚀.
 Generate exactly 2-4 ready-to-post tweets (max 280 characters each).
 Separate posts with "---".
-If the news is huge - mark it as BREAKING."""
+If the news is huge - start the post with "🚨 BREAKING"."""
 
     payload = {
         "model": "grok-4.20-reasoning",
@@ -105,28 +117,44 @@ If the news is huge - mark it as BREAKING."""
 def post_to_x(text):
     try:
         api.update_status(text)
-        print(f"✅ Posted: {text[:80]}...")
+        print(f"✅ Posted at {datetime.now(ET).strftime('%H:%M')} ET: {text[:80]}...")
         time.sleep(3)
         return True
     except Exception as e:
         print(f"Post error: {e}")
         return False
 
+def is_slot_time():
+    now = datetime.now(ET)
+    current = now.strftime("%H:%M")
+    return current in SLOTS
+
 # ====================== MAIN LOOP ======================
 print("🚀 Brutal Degen Roast Bot STARTED – @BrutalDegenX")
-print("Global crypto market • English only • Brutal style")
+print("Harmonogram ET • Global crypto • No spam")
 
 while True:
-    print(f"[{datetime.now()}] Checking for fresh news...")
+    now_et = datetime.now(ET)
+    print(f"[{now_et.strftime('%H:%M')} ET] Sprawdzam nowe newsy...")
+
     news = fetch_rss_news()
-    
+
     if news:
-        print(f"Found {len(news)} new stories → generating roasts...")
+        print(f"Znaleziono {len(news)} nowych newsów → generuję roasty...")
         posts = generate_posts_grok(news)
+        
         for post in posts:
-            post_to_x(post)
+            # Jeśli Grok oznaczył jako BREAKING → publikujemy OD RAZU
+            if post.startswith("🚨 BREAKING") or "BREAKING" in post.upper():
+                print("🚨 BREAKING NEWS – publikuję natychmiast!")
+                post_to_x(post)
+            # Normalny post → publikujemy tylko w slotach
+            elif is_slot_time():
+                post_to_x(post)
+            else:
+                print("⏳ Nie ma slotu – pomijam publikację")
     else:
-        print("No new news right now.")
-    
-    print(f"⏳ Sleeping {POST_INTERVAL//60} minutes...\n")
-    time.sleep(POST_INTERVAL)
+        print("Brak nowych newsów.")
+
+    print(f"⏳ Czekam {CHECK_INTERVAL//60} minut...\n")
+    time.sleep(CHECK_INTERVAL)
